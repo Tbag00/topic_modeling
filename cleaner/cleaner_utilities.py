@@ -1,0 +1,164 @@
+# Cleaner: elimina i paragrafi che non riguardano le competenze e le attivita' di lavoro
+# Procedimento: 
+# 0. Normalizzo il corpus
+# 1. Divide descrizione in frasi con lo spacy component sentencizer
+# 2. Creo un custom component che usi SBERT per fare embedding delle frasi
+# 3. 
+from ast import List
+import re
+import unicodedata
+import spacy
+from tqdm import tqdm
+import pandas as pd
+import numpy as np
+
+## --Normalizzazione testo--
+# REGEX NORMALIZZAZIONE
+DASHES = {
+    "\u2010": "-",  # hyphen
+    "\u2011": "-",  # non-breaking hyphen
+    "\u2012": "-",  # figure dash
+    "\u2013": "-",  # en dash
+    "\u2014": "-",  # em dash
+    "\u2015": "-",  # horizontal bar
+    "\u2212": "-",  # minus sign
+}
+BULLETS = {
+    "\u2022": "-",  # • bullet
+    "\u2023": "-",  # ‣ triangular bullet
+    "\u2043": "-",  # ⁃ hyphen bullet
+    "\u2219": "-",  # ∙ bullet operator
+    "\u25E6": "-",  # ◦ white bullet
+    "\u25AA": "-",  # ▪ black small square
+    "\u25AB": "-",  # □ white small square
+    "\u25CF": "-",  # ● black circle
+    "\u25CB": "-",  # ○ white circle
+    "\u25A0": "-",  # ■ black square
+    "\u25A1": "-",  # □ white square
+}
+# Alcuni spazi Unicode strani li trasformo in spazio normale
+WEIRD_SPACES = {
+    "\u00A0": " ",  # no-break space
+    "\u2007": " ",  # figure space
+    "\u202F": " ",  # narrow no-break space
+    "\u2000": " ", "\u2001": " ", "\u2002": " ", "\u2003": " ", "\u2004": " ",
+    "\u2005": " ", "\u2006": " ", "\u2008": " ", "\u2009": " ", "\u200A": " ",
+    "\u200B": "",   # zero-width space: rimuovi
+    "\u2060": "",   # word joiner: rimuovi
+}
+TRANS = str.maketrans({**DASHES, **BULLETS, **WEIRD_SPACES}) # Unisco tutte le sostituzioni
+
+RE_MULTI_DASH = re.compile(r"-{2,}")           # collasso trattini doppi
+RE_TRAILING_SPACES = re.compile(r"[ \t]+\n")   # spazi/tabs prima di newline
+RE_MULTI_SPACES   = re.compile(r"[ \t]{2,}")   # spazi/tabs multipli
+RE_MULTI_NEWLINE  = re.compile(r"\n{3,}")      # più di due newline
+
+def normalize_text(s: str) -> str:
+    s = unicodedata.normalize("NFKC", s) # standardizza forme unicode
+    s = s.translate(TRANS)
+
+    # Tolgo spazi e trattini doppi (preservo doppi \n\n per divisione in paragrafi)
+    s = RE_MULTI_DASH.sub("-", s)
+    s = RE_TRAILING_SPACES.sub("\n", s)
+    s = RE_MULTI_SPACES.sub(" ", s)
+    s = RE_MULTI_NEWLINE.sub("\n\n", s)
+
+    return s.strip()
+
+# -- Pipeline --
+nlp = spacy.blank("en")
+header_model = spacy.load("/home/tommaso/tesi/jobs/cleaner/header_model/model-best")
+
+nlp.add_pipe("sentencizer")
+# nlp.add_pipe("sbert_component", last=True)
+for name, component in header_model.pipeline:   # come si aggiunge un modello allenato a spacy
+    nlp.add_pipe(name, source=header_model)
+
+## -- Divisione in paragrafi --
+# Strategia: prima divido in paragrafi trovando headers
+# -> se troppi token in un paragrafo splitto in base a \n\n
+# -> se i paragrafi corrispondono grosso modo a una frase allora ho splittato troppo, unisco finche' la similarità rimane sopra a una soglia (fatto con componente SBERT)
+
+# Mini pipeline per contare sentences dentro uno span
+nlp_sent = spacy.blank("en")
+nlp_sent.add_pipe("sentencizer")
+
+def count_sentences(part: str) -> int:
+    doc = nlp_sent(part)
+    return len(list(doc.sents))
+
+def description_headers(s: str) -> List:
+    doc = nlp(s)
+    return [span.text for span in doc.spans.get("sc", [])] # se non trova, get restituisce lista vuota
+
+# Spezza prima con \n\n, se spezzo troppo raggruppo frasi per similarità
+def _split_long_paragraph(span, max_tokens=120, min_sents=2):
+    text = span.text
+    if(len(span) < max_tokens):
+        return [text]
+    
+    parts = [p.strip() for p in text.split("\n\n") if p.strip()]
+    buffer = ""
+    paragraphs = []
+    
+    for i, part in enumerate(parts):
+        n_sents = count_sentences(part)
+        
+        if n_sents <= min_sents and i < len(parts-1):
+            buffer += "\n" + part
+        else:
+            paragraphs.append((buffer + "\n" + part).strip())
+    
+    if buffer:
+        paragraphs.append(buffer.strip())
+    
+    return paragraphs
+
+def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è il numero di token massimo di un paragrafo
+    docs = nlp.pipe(texts)
+    paragraphs = [] # lista di dizionari con chiavi des_id, par_id par
+
+    for des_id, doc in tqdm(enumerate(docs), total=len(texts)):
+        separators = sorted({0, *[span.start for span in doc.spans.get("sc", [])], len(doc)})   # separo prendendo il primo token dello span
+                                                                                                # aggiungo inizio e fine documento per non tagliare pezzi
+                                                                                                # asterisco per unpackare lista nei suoi elementi
+        par_id = 0
+        for (start, end) in zip(separators[:-1], separators[1:]): # start parte dal primo e arriva al penultimo end parte dal secondo
+            span = doc[start:end]
+            
+            # Divido ulteriormente con \n\n i lunghi
+            sub_pars = _split_long_paragraph(span, max_tokens=threshold, min_sents=2)
+    
+            for sub in sub_pars:
+                paragraphs.append({
+                    "des_id": des_id,
+                    "par_id": par_id,
+                    "text": sub
+                })
+                par_id+=1
+            
+    return paragraphs
+
+# criteri per la predizione dei paragrafi (conservativa per job):
+#   se prob_job > 0.4 -> job
+#   se l'etichetta più alta differisce di solo 0.15 (o meno) da job scelgo job
+#   se etichetta più alta è inferiore a 0.3 scelgo job
+def predict_label(
+    df: pd.DataFrame,
+    job_threshold = 0.4,          # soglia da cui accetto job
+    diff_threshold = 0.15,        # differenza minima che ci deve essere tra job e la predict massima (se inferiore scelgo job)
+    low_conf_threshold = 0.3,     # se la somma di tutte le probabilita' è inferiore a questa assegno job
+):
+    dominant = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].idxmax(axis=1).str.replace("prob_")    # axis=1 per lavorare sulle righe, dal nome della colonna max tolgo la parte prob_ per lasciare solo "job", "blurb_legal", ecc.
+    top_probs = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1)
+    
+    # condizioni booleane
+    cond1 = df["prob_job"] > job_threshold
+    cond2 = (top_probs - df["prob_job"] < diff_threshold)
+    cond3 = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1) < low_conf_threshold
+    
+    conditions = [cond1, cond2, cond3]
+    choices = ["job", "job", "job"]
+    
+    prediction = np.select(conditions, choices, default=dominant)   # se una delle condition si avvera seleziona job altrimenti la default
+    return prediction

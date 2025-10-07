@@ -1,0 +1,14 @@
+bertopic
+hdbscan
+joblib
+kagglehub
+numpy
+pandas
+scikit-learn
+selenium
+undetected-chromedriver
+sentence-transformers
+spacy
+torch
+tqdm
+umap-learn

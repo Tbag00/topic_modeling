@@ -1,0 +1,36 @@
+{
+  "run_timestamp": "20251006_215931",
+  "search_terms": [
+    "Business Intelligence",
+    "Data Analytics"
+  ],
+  "log_file": "/home/tommaso/tesi/topic_modeling/scraper/logs/simplyhired_20251006_215931.log",
+  "csv_file": "/home/tommaso/tesi/topic_modeling/scraper/output/simplyhired_jobs_20251006_215931.csv",
+  "stats_file": "/home/tommaso/tesi/topic_modeling/scraper/output/simplyhired_stats_20251006_215931.json",
+  "totals": {
+    "pages_attempted": 0,
+    "pages_visited": 0,
+    "jobs_collected": 0,
+    "job_parse_failures": 0,
+    "links_discovered": 0
+  },
+  "per_term": [
+    {
+      "search_term": "Business Intelligence",
+      "pages_attempted": 0,
+      "pages_visited": 0,
+      "jobs_collected": 0,
+      "job_parse_failures": 0,
+      "links_discovered": 0
+    },
+    {
+      "search_term": "Data Analytics",
+      "pages_attempted": 0,
+      "pages_visited": 0,
+      "jobs_collected": 0,
+      "job_parse_failures": 0,
+      "links_discovered": 0
+    }
+  ],
+  "total_rows": 0
+}
