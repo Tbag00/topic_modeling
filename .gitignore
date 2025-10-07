@@ -2,6 +2,9 @@
 .venv/
 venv/
 
+# DataFrames
+dataframes
+
 # Cache di Python
 __pycache__/
 *.py[cod]
