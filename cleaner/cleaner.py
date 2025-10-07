@@ -2,6 +2,7 @@ import argparse
 from itertools import batched
 import random
 import pandas as pd
+from tqdm import tqdm
 import joblib
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
@@ -18,33 +19,29 @@ args = parser.parse_args()
 
 random.seed(10)
 df_name = args.df_name
-wd = Path(__file__).parent
+wd = Path(__file__).parent.parent
 n_files = 0   # numero di csv puliti generati 
 
 # Carico i modelli
 categorizer = joblib.load(wd / "cleaner" / "paragraph_classifier" / "logreg_sbert_slightly_unbalanced.pkl")
 sbert = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
 
-for i, df in enumerate(pd.read_csv(wd / "dataframes" / df_name, chunksize=100)):    # divido dataset in più piccoli per gestire memoria
+for i, df in tqdm(enumerate(pd.read_csv(wd / "dataframes" / df_name, chunksize=100)), ):    # divido dataset in più piccoli per gestire memoria
 
     ## Tolgo descrizioni NA
     df.dropna(subset=["Description"], inplace=True)
 
     ## Tolgo duplicati e normalizzo il testo
-    df.drop_duplicates(subset=["Title", "Description"], inplace=True)    # qualche job post può essere trovato con più criteri di ricerca
     df["Description"] = df["Description"].map(normalize_text)
     df.reset_index(drop=True, inplace=True)
 
     ## Tolgo paragrafi che non parlano del lavoro
-    paragraphs_dic = paragraph_creator_pipe(df["Description"].to_list())    # keys: "des_id", "par_id", "text"
+    paragraphs_list = paragraph_creator_pipe(df["Description"].to_list())    # ciascun item contiene des_id, par_id, text
 
-    paragraphs_df = pd.DataFrame({
-        "des_id": paragraphs_dic["des_id"],
-        "par_id": paragraphs_dic["par_id"],
-        "text": paragraphs_dic["text"],
-    })
+    paragraphs_df = pd.DataFrame(paragraphs_list)
 
     texts = paragraphs_df["text"].to_list()
+    print(texts.length())
 
     embeddings = sbert.encode(
         texts,
@@ -77,6 +74,7 @@ for i, df in enumerate(pd.read_csv(wd / "dataframes" / df_name, chunksize=100)):
         .apply(lambda parts: "\n\n".join(parts))
         .reset_index(name="Description")
     )
+    selected_paragraphs["Description"] = selected_paragraphs["Description"].map(normalize_text)
 
     cleaned_df = df.iloc[selected_paragraphs["des_id"]].reset_index(drop=True)
     cleaned_df["Description"] = selected_paragraphs["Description"]
@@ -88,4 +86,5 @@ for i, df in enumerate(pd.read_csv(wd / "dataframes" / df_name, chunksize=100)):
 df_all = pd.concat([pd.read_csv(f"cleaned_{i}.csv") for i in range(n_files)],
     ignore_index=True)
 
+df_all.drop_duplicates(subset=["Title", "Description"], inplace=True)    # qualche job post può essere trovato con più criteri di ricerca
 df_all.to_csv(wd / "dataframes" / "cleaned.csv")
