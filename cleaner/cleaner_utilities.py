@@ -103,12 +103,13 @@ def _split_long_paragraph(span, max_tokens=120, min_sents=2):
     
     for i, part in enumerate(parts):
         n_sents = count_sentences(part)
-        
-        if n_sents <= min_sents and i < len(parts-1):
+
+        if n_sents <= min_sents and i < len(parts)-1:
             buffer += "\n" + part
         else:
             paragraphs.append((buffer + "\n" + part).strip())
-    
+            buffer = ""
+
     if buffer:
         paragraphs.append(buffer.strip())
     
