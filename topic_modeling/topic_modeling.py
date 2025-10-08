@@ -28,12 +28,12 @@ umap_model = UMAP(
     n_components=10,
     min_dist=0.0,    # punti molto concentrati per HDBSCAN (evito outlier che andranno in -1)
     metric='cosine',
-    random_state=1    
+    random_state=1
 )
 hdbscan_model = HDBSCAN(
     min_cluster_size=50,
     min_samples=15,
-    metric= 'cosine',
+    metric='euclidean',
     cluster_selection_method='eom', # piu' stabile di leaf
     prediction_data=True,           # per le topic probabilities
     cluster_selection_epsilon= 0    # porta a 0.05 se ci sono troppi cluster finali e vanno fusi
@@ -41,7 +41,7 @@ hdbscan_model = HDBSCAN(
 vectorizer_model = CountVectorizer(     # serve DOPO il topic modeling, per dare nomi alle classi
    stop_words="english",
    ngram_range=(1, 3),
-   min_df= 100,  # parola deve apparire in almeno 100 docs
+   min_df=0.1,  # richiede che un termine compaia almeno nel 10% dei documenti aggregati per topic
    max_df=0.9   # ignora parole troppo comuni
 )
 

@@ -1,4 +1,5 @@
 import argparse
+import csv
 import random
 import pandas as pd
 from tqdm import tqdm
@@ -20,13 +21,26 @@ random.seed(10)
 df_name = args.df_name
 wd = Path(__file__).parent.parent
 n_files = 0   # numero di csv puliti generati 
-chunk_reader = pd.read_csv(wd / "dataframes" / df_name, chunksize=100)
+chunk_size = 100
+input_path = wd / "dataframes" / df_name
+try:
+    with input_path.open("r", encoding="utf-8", newline="") as csvfile:
+        reader = csv.reader(csvfile)
+        next(reader, None)    # salta header
+        total_rows = sum(1 for _ in reader)
+except FileNotFoundError as exc:
+    raise FileNotFoundError(f"File non trovato: {input_path}") from exc
+
+total_chunks = (total_rows + chunk_size - 1) // chunk_size if total_rows else 0
+chunk_reader = pd.read_csv(input_path, chunksize=chunk_size)
 
 # Carico i modelli
 categorizer = joblib.load(wd / "cleaner" / "paragraph_classifier" / "logreg_sbert_slightly_unbalanced.pkl")
 sbert = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
 
-for i, df in enumerate(tqdm(chunk_reader, desc="Chunks", unit="chunk")):    # divido dataset in più piccoli per gestire memoria
+for i, df in enumerate(
+    tqdm(chunk_reader, desc="Chunks", unit="chunk", total=total_chunks or None),
+):    # divido dataset in più piccoli per gestire memoria
 
     ## Tolgo descrizioni NA
     df.dropna(subset=["Description"], inplace=True)
@@ -82,7 +96,7 @@ for i, df in enumerate(tqdm(chunk_reader, desc="Chunks", unit="chunk")):    # di
     n_files = i + 1
 
 # Concateno tutti i file e salvo file finale
-df_all = pd.concat([pd.read_csv(f"cleaned_{i}.csv") for i in range(n_files)],
+df_all = pd.concat([pd.read_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv") for i in range(n_files)],
     ignore_index=True)
 
 df_all.drop_duplicates(subset=["Title", "Description"], inplace=True)    # qualche job post può essere trovato con più criteri di ricerca
