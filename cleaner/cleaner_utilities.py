@@ -11,6 +11,9 @@ import spacy
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+from pathlib import Path
+
+wd = Path(__file__).parent
 
 ## --Normalizzazione testo--
 # REGEX NORMALIZZAZIONE
@@ -67,7 +70,7 @@ def normalize_text(s: str) -> str:
 
 # -- Pipeline --
 nlp = spacy.blank("en")
-header_model = spacy.load("/home/tommaso/tesi/jobs/cleaner/header_model/model-best")
+header_model = spacy.load(wd / "header_model/model-best")
 
 nlp.add_pipe("sentencizer")
 # nlp.add_pipe("sbert_component", last=True)
@@ -119,7 +122,7 @@ def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è i
     docs = nlp.pipe(texts)
     paragraphs = [] # lista di dizionari con chiavi des_id, par_id par
 
-    for des_id, doc in tqdm(enumerate(docs), total=len(texts)):
+    for des_id, doc in enumerate(docs):
         separators = sorted({0, *[span.start for span in doc.spans.get("sc", [])], len(doc)})   # separo prendendo il primo token dello span
                                                                                                 # aggiungo inizio e fine documento per non tagliare pezzi
                                                                                                 # asterisco per unpackare lista nei suoi elementi
@@ -150,7 +153,7 @@ def predict_label(
     diff_threshold = 0.15,        # differenza minima che ci deve essere tra job e la predict massima (se inferiore scelgo job)
     low_conf_threshold = 0.3,     # se la somma di tutte le probabilita' è inferiore a questa assegno job
 ):
-    dominant = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].idxmax(axis=1).str.replace("prob_")    # axis=1 per lavorare sulle righe, dal nome della colonna max tolgo la parte prob_ per lasciare solo "job", "blurb_legal", ecc.
+    dominant = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].idxmax(axis=1).str.replace("prob_", "", regex=False)    # axis=1 per lavorare sulle righe, tolgo prefisso prob_
     top_probs = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1)
     
     # condizioni booleane

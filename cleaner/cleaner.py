@@ -1,5 +1,4 @@
 import argparse
-from itertools import batched
 import random
 import pandas as pd
 from tqdm import tqdm
@@ -21,12 +20,13 @@ random.seed(10)
 df_name = args.df_name
 wd = Path(__file__).parent.parent
 n_files = 0   # numero di csv puliti generati 
+chunk_reader = pd.read_csv(wd / "dataframes" / df_name, chunksize=100)
 
 # Carico i modelli
 categorizer = joblib.load(wd / "cleaner" / "paragraph_classifier" / "logreg_sbert_slightly_unbalanced.pkl")
 sbert = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")
 
-for i, df in tqdm(enumerate(pd.read_csv(wd / "dataframes" / df_name, chunksize=100)), ):    # divido dataset in più piccoli per gestire memoria
+for i, df in enumerate(tqdm(chunk_reader, desc="Chunks", unit="chunk")):    # divido dataset in più piccoli per gestire memoria
 
     ## Tolgo descrizioni NA
     df.dropna(subset=["Description"], inplace=True)
@@ -41,12 +41,11 @@ for i, df in tqdm(enumerate(pd.read_csv(wd / "dataframes" / df_name, chunksize=1
     paragraphs_df = pd.DataFrame(paragraphs_list)
 
     texts = paragraphs_df["text"].to_list()
-    print(texts.length())
 
     embeddings = sbert.encode(
         texts,
         batch_size=256,
-        show_progress_bar=True,
+        show_progress_bar=False,
         normalize_embeddings=True,
     )
 
@@ -79,8 +78,8 @@ for i, df in tqdm(enumerate(pd.read_csv(wd / "dataframes" / df_name, chunksize=1
     cleaned_df = df.iloc[selected_paragraphs["des_id"]].reset_index(drop=True)
     cleaned_df["Description"] = selected_paragraphs["Description"]
 
-    cleaned_df.to_csv(wd / "cleaner" / "output" /f"cleaned_{i}.csv")
-    n_files = i
+    cleaned_df.to_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv")
+    n_files = i + 1
 
 # Concateno tutti i file e salvo file finale
 df_all = pd.concat([pd.read_csv(f"cleaned_{i}.csv") for i in range(n_files)],
