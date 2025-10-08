@@ -4,6 +4,7 @@ venv/
 
 # DataFrames
 dataframes
+cleaner/output
 
 # Cache di Python
 __pycache__/

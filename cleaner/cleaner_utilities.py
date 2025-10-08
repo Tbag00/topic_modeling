@@ -150,6 +150,7 @@ def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è i
 def predict_label(
     df: pd.DataFrame,
     job_threshold = 0.4,          # soglia da cui accetto job
+    blurb_threshold = 0.45,        # inserito poiché troppo lasso nell'intercettare blurb  
     diff_threshold = 0.15,        # differenza minima che ci deve essere tra job e la predict massima (se inferiore scelgo job)
     low_conf_threshold = 0.3,     # se la somma di tutte le probabilita' è inferiore a questa assegno job
 ):
@@ -158,8 +159,9 @@ def predict_label(
     
     # condizioni booleane
     cond1 = df["prob_job"] > job_threshold
-    cond2 = (top_probs - df["prob_job"] < diff_threshold)
-    cond3 = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1) < low_conf_threshold
+    cond2 = df["prob_blurb_legal"] > blurb_threshold
+    cond3 = (top_probs - df["prob_job"] < diff_threshold)
+    cond4 = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1) < low_conf_threshold
     
     conditions = [cond1, cond2, cond3]
     choices = ["job", "job", "job"]
