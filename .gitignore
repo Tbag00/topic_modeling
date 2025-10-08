@@ -4,10 +4,10 @@ venv/
 
 # DataFrames
 dataframes
-cleaner/output
+cleaner/output*
 
 # Output finale
-topic_modeling/output
+topic_modeling/output*
 
 # Cache di Python
 __pycache__/

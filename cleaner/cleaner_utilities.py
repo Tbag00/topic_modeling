@@ -149,22 +149,25 @@ def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è i
 #   se etichetta più alta è inferiore a 0.3 scelgo job
 def predict_label(
     df: pd.DataFrame,
-    job_threshold = 0.4,          # soglia da cui accetto job
-    blurb_threshold = 0.45,        # inserito poiché troppo lasso nell'intercettare blurb  
-    diff_threshold = 0.15,        # differenza minima che ci deve essere tra job e la predict massima (se inferiore scelgo job)
-    low_conf_threshold = 0.3,     # se la somma di tutte le probabilita' è inferiore a questa assegno job
+    job_threshold=0.4,           # soglia da cui accetto job
+    blurb_threshold=0.4,         # soglia per intercettare blurb
+    diff_threshold=0.15,         # se job è vicino alla max, scelgo job
+    low_conf_threshold=0.3       # se tutto è incerto, scelgo job
 ):
-    dominant = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].idxmax(axis=1).str.replace("prob_", "", regex=False)    # axis=1 per lavorare sulle righe, tolgo prefisso prob_
-    top_probs = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1)
-    
-    # condizioni booleane
-    cond1 = df["prob_job"] > job_threshold
-    cond2 = df["prob_blurb_legal"] > blurb_threshold
-    cond3 = (top_probs - df["prob_job"] < diff_threshold)
-    cond4 = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1) < low_conf_threshold
-    
-    conditions = [cond1, cond2, cond3]
-    choices = ["job", "job", "job"]
-    
-    prediction = np.select(conditions, choices, default=dominant)   # se una delle condition si avvera seleziona job altrimenti la default
+    dominant = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].idxmax(axis=1).str.replace("prob_", "", regex=False)   # prende la probabilità piu' alta
+    top_probs = df[["prob_job", "prob_blurb_legal", "prob_offer_detail"]].max(axis=1)   # quanto sia vicina la prob massima a job
+
+    cond_blurb = df["prob_blurb_legal"] > blurb_threshold
+    cond_job = df["prob_job"] > job_threshold
+    cond_diff = (top_probs - df["prob_job"] < diff_threshold)
+    cond_low = top_probs < low_conf_threshold
+
+    prediction = np.select(
+        [
+            cond_blurb & ~cond_job,  # blurb forte e non job
+            cond_job | cond_diff | cond_low     # se job, simile a job, o incerto
+        ],
+        ["blurb_legal", "job"],
+        default=dominant    # se condizioni non soddisfatte metto job di default
+    )
     return prediction
