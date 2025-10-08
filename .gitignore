@@ -6,6 +6,9 @@ venv/
 dataframes
 cleaner/output
 
+# Output finale
+topic_modeling/output
+
 # Cache di Python
 __pycache__/
 *.py[cod]
