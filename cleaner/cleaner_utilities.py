@@ -173,7 +173,7 @@ def predict_label(
     return prediction
 
 # pulizia frasi
-ner_model = spacy.load("en_core_web_lg")
+ner_model = spacy.load("en_core_web_trf")
 ner_model.disable_pipes("tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer")
 assert "ner" in ner_model.pipe_names, "NER component not found in model!"
 
