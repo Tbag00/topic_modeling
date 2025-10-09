@@ -12,3 +12,4 @@ spacy
 torch
 tqdm
 umap-learn
+# scarica modello spacy con python -m spacy download en_core_web_trf

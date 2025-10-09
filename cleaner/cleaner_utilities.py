@@ -174,7 +174,7 @@ def predict_label(
 
 # pulizia frasi
 ner_model = spacy.load("en_core_web_trf")
-ner_model.disable_pipes("tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer")
+ner_model.disable_pipes("tagger", "parser", "attribute_ruler", "lemmatizer")
 assert "ner" in ner_model.pipe_names, "NER component not found in model!"
 
 # entita' che NON devono essere rimosse
