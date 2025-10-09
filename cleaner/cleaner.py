@@ -6,7 +6,7 @@ from tqdm import tqdm
 import joblib
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
-from cleaner_utilities import normalize_text, paragraph_creator_pipe, predict_label
+from cleaner_utilities import normalize_text, paragraph_creator_pipe, predict_label, remove_entities
 
 # argument: dataframe name
 parser = argparse.ArgumentParser(description="Clean raw job descriptions.")
@@ -15,13 +15,21 @@ parser.add_argument(
     default="simplyhired_jobs_merged.csv",
     help="CSV filename inside the dataframes directory to clean.",
 )
+parser.add_argument(
+    "--clean-sentences",
+    default=True,
+    help="Clean entities from job paragraphs"
+)
 args = parser.parse_args()
 
 random.seed(10)
 df_name = args.df_name
+clean_sentences = args.clean_sentences
 wd = Path(__file__).parent.parent
 n_files = 0   # numero di csv puliti generati 
 chunk_size = 100
+
+
 input_path = wd / "dataframes" / df_name
 try:
     with input_path.open("r", encoding="utf-8", newline="") as csvfile:
@@ -81,12 +89,16 @@ for i, df in enumerate(
 
     paragraphs_df["prediction"] = predict_label(paragraphs_df)
     paragraphs_df = paragraphs_df.loc[paragraphs_df["prediction"] == "job"].reset_index(drop=True)
+    
 
     selected_paragraphs = (
         paragraphs_df.groupby("des_id")["text"]
         .apply(lambda parts: "\n\n".join(parts))
         .reset_index(name="Description")
     )
+    if clean_sentences:
+        selected_paragraphs["Description"] = remove_entities(selected_paragraphs["Description"].to_list())
+
     selected_paragraphs["Description"] = selected_paragraphs["Description"].map(normalize_text)
 
     cleaned_df = df.iloc[selected_paragraphs["des_id"]].reset_index(drop=True)
@@ -96,8 +108,7 @@ for i, df in enumerate(
     n_files = i + 1
 
 # Concateno tutti i file e salvo file finale
-df_all = pd.concat([pd.read_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv") for i in range(n_files)],
-    ignore_index=True)
+df_all = pd.concat([pd.read_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv") for i in range(n_files)], ignore_index=True)
 
 df_all.drop_duplicates(subset=["Title", "Description"], inplace=True)    # qualche job post può essere trovato con più criteri di ricerca
 df_all.to_csv(wd / "dataframes" / "cleaned.csv")

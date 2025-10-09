@@ -73,6 +73,7 @@ nlp = spacy.blank("en")
 header_model = spacy.load(wd / "header_model/model-best")
 
 nlp.add_pipe("sentencizer")
+nlp.pipe_names
 # nlp.add_pipe("sbert_component", last=True)
 for name, component in header_model.pipeline:   # come si aggiunge un modello allenato a spacy
     nlp.add_pipe(name, source=header_model)
@@ -80,7 +81,6 @@ for name, component in header_model.pipeline:   # come si aggiunge un modello al
 ## -- Divisione in paragrafi --
 # Strategia: prima divido in paragrafi trovando headers
 # -> se troppi token in un paragrafo splitto in base a \n\n
-# -> se i paragrafi corrispondono grosso modo a una frase allora ho splittato troppo, unisco finche' la similarità rimane sopra a una soglia (fatto con componente SBERT)
 
 # Mini pipeline per contare sentences dentro uno span
 nlp_sent = spacy.blank("en")
@@ -171,3 +171,87 @@ def predict_label(
         default=dominant    # se condizioni non soddisfatte metto job di default
     )
     return prediction
+
+# pulizia frasi
+ner_model = spacy.load("en_core_web_lg")
+ner_model.disable_pipes("tok2vec", "tagger", "parser", "attribute_ruler", "lemmatizer")
+assert "ner" in ner_model.pipe_names, "NER component not found in model!"
+
+# entita' che NON devono essere rimosse
+TECH_WHITELIST = {
+    # --- Cloud & Infrastructure ---
+    "aws", "amazon web services",
+    "azure", "microsoft azure",
+    "gcp", "google cloud", "google cloud platform",
+    "oracle", "oci",
+    "ibm cloud", "red hat", "vmware",
+    "digitalocean", "heroku", "linode",
+    "cloudflare", "netlify", "vercel",
+
+    # --- Data Engineering / Warehousing ---
+    "snowflake", "databricks", "bigquery", "redshift",
+    "athena", "glue", "emr", "lake formation",
+    "synapse", "powerbi", "tableau", "qlik", "looker",
+    "superset", "airflow", "prefect", "dbt",
+
+    # --- DevOps / Infrastructure as Code ---
+    "docker", "kubernetes", "helm", "terraform", "ansible", "jenkins",
+    "gitlab", "github", "bitbucket", "circleci", "travisci",
+    "prometheus", "grafana", "datadog", "new relic", "elastic", "elk", "loki",
+
+    # --- Databases & Storage ---
+    "mysql", "postgresql", "postgres", "sqlserver", "mssql",
+    "mongodb", "cassandra", "redis", "couchbase", "dynamodb",
+    "elasticsearch", "neo4j", "firebase", "hbase", "clickhouse", "snowplow",
+
+    # --- Programming Languages ---
+    "python", "java", "javascript", "typescript", "nodejs", "go", "golang",
+    "rust", "ruby", "php", "scala", "r", "matlab", "swift", "kotlin", "perl",
+    "bash", "powershell",
+
+    # --- Machine Learning / AI / NLP ---
+    "tensorflow", "pytorch", "keras", "scikitlearn", "sklearn", "huggingface",
+    "transformers", "bert", "sbert", "gpt", "chatgpt", "llm",
+    "opencv", "xgboost", "lightgbm", "catboost",
+    "mlflow", "wandb", "dvc", "ray", "optuna",
+    "langchain", "gradio", "streamlit",
+
+    # --- Analytics / BI / ETL ---
+    "powerbi", "tableau", "looker", "qlik", "superset",
+    "talend", "informatica", "alteryx", "sas", "sap hana", "sap", "sas enterprise",
+
+    # --- Web & Frontend ---
+    "react", "reactjs", "nextjs", "angular", "vue", "svelte",
+    "bootstrap", "tailwind", "html", "css", "sass", "less",
+
+    # --- Backend / Frameworks ---
+    "django", "flask", "fastapi", "spring", "springboot",
+    "express", "dotnet", "aspnet", "laravel", "rails", "symfony",
+
+    # --- Operating Systems / Environments ---
+    "linux", "windows", "macos", "ubuntu", "centos", "rhel", "debian", "android", "ios",
+
+    # --- Version Control / CI-CD ---
+    "git", "github", "gitlab", "bitbucket", "jenkins", "travisci", "circleci", "bamboo",
+
+    # --- Cloud Security / Monitoring ---
+    "splunk", "siem", "crowdstrike", "sentinelone", "paloalto", "checkpoint", "zscaler",
+
+    # --- Collaboration / Productivity ---
+    "jira", "confluence", "notion", "slack", "monday", "asana", "trello",
+
+    # --- Miscellaneous ---
+    "sap", "sap hana", "salesforce", "servicenow", "workday", "netsuite",
+    "autocad", "solidworks", "unity", "unreal", "blender"
+}
+
+def remove_entities(texts, removable_entities={"ORG", "PERSON", "GPE"}): 
+    cleaned = []
+    for doc in ner_model.pipe(texts):
+        tokens = []
+        for token in doc:
+            if token.ent_type_ in removable_entities and token.text.lower() not in TECH_WHITELIST:   # qui rimuovo entita'
+                continue
+            tokens.append(token.text_with_ws)   # attacco testo con withespaces per riottenere forma originale
+        cleaned.append("".join(tokens).strip())
+    return cleaned
