@@ -6,6 +6,9 @@ venv/
 dataframes
 cleaner/output*
 
+# Jsonl(addestramento)
+cleaner/jsonl
+
 # Output finale
 topic_modeling/output*
 
