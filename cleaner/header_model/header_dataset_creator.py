@@ -7,7 +7,7 @@ from pathlib import Path
 from cleaner_utilities import normalize_text
 
 random.seed(10)
-wd = Path(__file__).parent
+wd = Path(__file__).parent.parent
 df = pd.DataFrame(wd.parent / dataframes / simplyhired_jobs_merged.csv)
 descriptions = list(df["Description"].map(normalize_text))
 output = wd / "jsonl"
