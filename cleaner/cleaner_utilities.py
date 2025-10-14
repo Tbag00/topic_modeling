@@ -120,15 +120,29 @@ def _split_long_paragraph(span, max_tokens=120, min_sents=2):
 
 def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è il numero di token massimo di un paragrafo
     docs = nlp.pipe(texts)
-    paragraphs = [] # lista di dizionari con chiavi des_id, par_id par
+    paragraphs = [] # lista di dizionari con chiavi des_id, par_id, text
 
     for des_id, doc in enumerate(docs):
         separators = sorted({0, *[span.start for span in doc.spans.get("sc", [])], len(doc)})   # separo prendendo il primo token dello span
                                                                                                 # aggiungo inizio e fine documento per non tagliare pezzi
                                                                                                 # asterisco per unpackare lista nei suoi elementi
+        # accumulatore per header consecutivi
+        buffer = []
         par_id = 0
         for (start, end) in zip(separators[:-1], separators[1:]): # start parte dal primo e arriva al penultimo end parte dal secondo
             span = doc[start:end]
+            n_sents = len(list(span.sents))
+            
+            if n_sents == 1:
+                buffer.append(span.text.strip())
+                continue
+
+            # se c'è un buffer (uno o più header precedenti), prependili
+            if buffer:
+                span_text = " ".join(buffer + [span.text.strip()])
+                buffer.clear()
+            else:
+                span_text = span.text.strip()
             
             # Divido ulteriormente con \n\n i lunghi
             sub_pars = _split_long_paragraph(span, max_tokens=threshold, min_sents=2)
@@ -140,7 +154,13 @@ def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è i
                     "text": sub
                 })
                 par_id+=1
-            
+        
+        if buffer:
+            paragraphs.append({
+                "des_id": des_id,
+                "par_id": par_id,
+                "text": " ".join(buffer)
+            })
     return paragraphs
 
 # criteri per la predizione dei paragrafi (conservativa per job):
