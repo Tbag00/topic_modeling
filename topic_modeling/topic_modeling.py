@@ -22,6 +22,8 @@ parser.add_argument(
     help="Se true fa topic modeling delle descrizioni prendendo media degli embedding"
 )
 
+args = parser.parse_args()
+
 data_path = BASE_DIR.parent / "dataframes" / "cleaned.csv"
 output_dir = BASE_DIR / "output_paragraphs"
 output_dir.mkdir(parents=True, exist_ok=True)

@@ -138,4 +138,8 @@ for i, df in enumerate(
 # Concateno tutti i file e salvo file finale
 df_all = pd.concat([pd.read_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv") for i in range(n_files)], ignore_index=True)
 
+# ricostruisco des_id
+df_all.reset_index(drop=True, inplace=True)
+df_all["des_id"] = df_all.index
+
 df_all.to_csv(wd / "dataframes" / "cleaned.csv")

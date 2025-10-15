@@ -56,6 +56,11 @@ RE_TRAILING_SPACES = re.compile(r"[ \t]+\n")   # spazi/tabs prima di newline
 RE_MULTI_SPACES   = re.compile(r"[ \t]{2,}")   # spazi/tabs multipli
 RE_MULTI_NEWLINE  = re.compile(r"\n{3,}")      # più di due newline
 
+# per leggere il dataframe in chink di dimensione size, altrimenti la RAM non basta
+def dataframe_chunker(df, size):
+    for start in range(0, len(df), size):
+        yield df.iloc[start:start + size].copy()
+
 def normalize_text(s: str) -> str:
     s = unicodedata.normalize("NFKC", s) # standardizza forme unicode
     s = s.translate(TRANS)
@@ -117,37 +122,6 @@ def split_by_sentences(text, max_tokens=320, sentences_per_chunk=3):
 
     return sub_pars
 
-# Spezza prima con \n\n, se spezzo troppo raggruppo frasi per similarità
-def _split_long_paragraph(span, max_tokens=120, min_sents=2):
-    text = span.text
-    if(len(span) < max_tokens):
-        return [text]
-    
-    parts = [p.strip() for p in text.split("\n\n") if p.strip()]
-    buffer = ""
-    paragraphs = []
-    
-    for i, part in enumerate(parts):
-        n_sents = count_sentences(part)
-
-        if n_sents <= min_sents and i < len(parts)-1:
-            buffer += "\n" + part
-            continue
-        
-        full_part = (buffer + "\n" + part).strip()
-        buffer = ""
-
-        if len(full_part.split()) > 320:
-            sub_pars = split_by_sentences(full_part, max_tokens=max_tokens)
-            paragraphs.extend(sub_pars)
-        else:
-            paragraphs.append(full_part)
-
-    if buffer.strip():
-        paragraphs.append(buffer.strip())
-    
-    return paragraphs
-
 def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è il numero di token massimo di un paragrafo
     docs = nlp.pipe(texts)
     paragraphs = [] # lista di dizionari con chiavi des_id, par_id, text
@@ -156,27 +130,57 @@ def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è i
         separators = sorted({0, *[span.start for span in doc.spans.get("sc", [])], len(doc)})   # separo prendendo il primo token dello span
                                                                                                 # aggiungo inizio e fine documento per non tagliare pezzi
                                                                                                 # asterisco per unpackare lista nei suoi elementi
-        # accumulatore per header consecutivi
-        buffer = []
+        buffer_start = None
+        buffer_end = None
         par_id = 0
-        for (start, end) in zip(separators[:-1], separators[1:]): # start parte dal primo e arriva al penultimo end parte dal secondo
+        for (start, end) in zip(separators[:-1], separators[1:]): # start parte dal primo e arriva al penultimo, end parte dal secondo
             span = doc[start:end]
             n_sents = len(list(span.sents))
             
             if n_sents == 1:
-                buffer.append(span.text.strip())
+                if buffer_start is None:
+                    buffer_start = start
+                buffer_end = end
                 continue
 
             # se c'è un buffer (uno o più header precedenti), prependili
-            if buffer:
-                span_text = " ".join(buffer + [span.text.strip()])
-                buffer.clear()
+            if buffer_start is not None:
+                segment = doc[buffer_start:end]
+                buffer_start = None
+                buffer_end = None
             else:
-                span_text = span.text.strip()
-            
-            # Divido ulteriormente con \n\n i lunghi
-            sub_pars = _split_long_paragraph(span, max_tokens=threshold, min_sents=2)
-    
+                segment = span
+
+            # Divido ulteriormente con \n\n i lunghi, mantenendo chunk gestibili
+            token_count = len(segment)
+            if token_count < threshold:
+                sub_pars = [segment.text.strip()]
+            else:
+                text = segment.text
+                parts = [p.strip() for p in text.split("\n\n") if p.strip()]
+                buffer_parts = []
+                sub_pars = []
+
+                for idx, part in enumerate(parts):
+                    n_sents_part = count_sentences(part)
+
+                    if n_sents_part <= 2 and idx < len(parts) - 1:
+                        buffer_parts.append(part)
+                        continue
+
+                    full_part = "\n".join(buffer_parts + [part]).strip()
+                    buffer_parts.clear()
+
+                    if len(full_part.split()) > 320:
+                        sub_pars.extend(
+                            split_by_sentences(full_part, max_tokens=threshold)
+                        )
+                    else:
+                        sub_pars.append(full_part)
+
+                if buffer_parts:
+                    sub_pars.append("\n".join(buffer_parts).strip())
+
             for sub in sub_pars:
                 paragraphs.append({
                     "des_id": des_id,
@@ -185,12 +189,14 @@ def paragraph_creator_pipe(texts: List, threshold=120) -> List: # threshold è i
                 })
                 par_id+=1
         
-        if buffer:
-            paragraphs.append({
-                "des_id": des_id,
-                "par_id": par_id,
-                "text": " ".join(buffer)
-            })
+        if buffer_start is not None and buffer_end is not None:
+            leftover = doc[buffer_start:buffer_end].text.strip()
+            if leftover:
+                paragraphs.append({
+                    "des_id": des_id,
+                    "par_id": par_id,
+                    "text": leftover
+                })
     return paragraphs
 
 # criteri per la predizione dei paragrafi (conservativa per job):
