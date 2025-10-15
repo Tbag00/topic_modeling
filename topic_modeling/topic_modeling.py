@@ -18,7 +18,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--mean",
-    default=False,
+    action="store_true",
     help="Se true fa topic modeling delle descrizioni prendendo media degli embedding"
 )
 
@@ -32,16 +32,35 @@ assert all(c in df.columns for c in ["des_id", "par_id", "Description"]), "Il da
 
 # Crea un ID univoco per ogni paragrafo
 df["par_uid"] = df.apply(lambda r: f"D{r.des_id}_P{r.par_id}", axis=1)
-docs = df["Description"].astype(str).tolist()
+df.sort_values(["des_id", "par_id"], inplace=True)
+df.reset_index(drop=True, inplace=True)
+
+if args.mean:
+    paragraphs_df = df[["des_id", "par_id", "Description"]].copy()
+    paragraphs_df["Description"] = paragraphs_df["Description"].astype(str)
+    descriptions_df = (
+        paragraphs_df.groupby("des_id", sort=False)["Description"]
+        .apply(lambda parts: "\n\n".join(parts))
+        .reset_index(name="Description")
+    )
+    docs = descriptions_df["Description"].tolist()
+    embedding_input = paragraphs_df
+else:
+    docs = df["Description"].astype(str).tolist()
+    embedding_input = docs
 
 embedding_model = NormalizedSentenceTransformer(
     model_name="sentence-transformers/all-mpnet-base-v2",
     device="cuda",
     encode_kwargs={"batch_size": 256},
+    mean=args.mean,
 )
 
-embeddings = embedding_model.embed(docs, verbose=True)
-np.save(output_dir / "embeddings_paragraphs.npy", embeddings, allow_pickle=False)
+embeddings = embedding_model.embed(embedding_input, verbose=True)
+embeddings_path = (
+    output_dir / ("embeddings_descriptions.npy" if args.mean else "embeddings_paragraphs.npy")
+)
+np.save(embeddings_path, embeddings, allow_pickle=False)
 
 umap_model = UMAP(
     n_neighbors=15,  # basso per preservare contesto locale senza fondere cluster diversi visto che il gergo negli annunci e' molto simile
@@ -81,6 +100,11 @@ topic_info = topic_model.get_topic_info()
 topic_info.to_csv(output_dir / "topic_info.csv")
 
 document_info = topic_model.get_document_info(docs)
+if args.mean:
+    document_info.insert(0, "des_id", descriptions_df["des_id"])
+else:
+    document_info.insert(0, "par_id", df["par_id"])
+    document_info.insert(0, "des_id", df["des_id"])
 document_info.to_csv(output_dir / "document_probabilities.csv", index=False)
 
 mean_topic_prob = (
