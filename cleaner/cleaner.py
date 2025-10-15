@@ -114,10 +114,12 @@ for i, df in enumerate(
     ]
     
     if mantain_paragraphs:
+        selected_paragraphs = paragraphs_df.rename(columns={"text": "Description"})[
+            ["des_id", "par_id", "Description"]
+        ]  # rimuovo info riguardo etichettatura
         selected_paragraphs = selected_paragraphs[
-            selected_paragraphs["des_id"] in description_df["des_id"]
+            selected_paragraphs["des_id"].isin(description_df["des_id"])
         ]
-        selected_paragraphs = paragraphs_df.rename(columns={"text":"Description"})["des_id", "par_id", "Description"]   # rimuovo info riguardo etichettatura
     else:
         selected_paragraphs = description_df
 
