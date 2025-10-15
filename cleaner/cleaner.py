@@ -1,12 +1,11 @@
 import argparse
-import csv
 import random
 import pandas as pd
 from tqdm import tqdm
 import joblib
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
-from cleaner_utilities import normalize_text, paragraph_creator_pipe, predict_label, remove_entities
+from cleaner_utilities import normalize_text, paragraph_creator_pipe, predict_label, remove_entities, dataframe_chunker
 
 # argument: dataframe name
 parser = argparse.ArgumentParser(description="Clean raw job descriptions.")
@@ -25,6 +24,12 @@ parser.add_argument(
     default=True,
     help="mantain paragraphs subdivision instead of merging"
 )
+parser.add_argument(
+    "--min-word-count",
+    type= int,
+    default = 15,
+    help="Minimum length of a description in words (after cleaning)"
+)
 
 args = parser.parse_args()
 
@@ -32,22 +37,21 @@ random.seed(10)
 df_name = args.df_name
 clean_sentences = args.clean_sentences
 mantain_paragraphs = args.mantain_paragraphs
+min_word_count = args.min_word_count
 wd = Path(__file__).parent.parent
 n_files = 0   # numero di csv puliti generati 
 chunk_size = 100
 
-
 input_path = wd / "dataframes" / df_name
-try:
-    with input_path.open("r", encoding="utf-8", newline="") as csvfile:
-        reader = csv.reader(csvfile)
-        next(reader, None)    # salta header
-        total_rows = sum(1 for _ in reader)
-except FileNotFoundError as exc:
-    raise FileNotFoundError(f"File non trovato: {input_path}") from exc
+raw_df = pd.read_csv(input_path)
+raw_df.drop_duplicates(subset=["Title", "Description"], inplace=True)
+
+raw_df.dropna(axis=0, subset=["Title", "Description"], inplace=True)
+raw_df.drop_duplicates(subset=["Title", "Description"], inplace=True)    # qualche job post può essere trovato con più criteri di ricerca
+total_rows = raw_df.shape[0]
 
 total_chunks = (total_rows + chunk_size - 1) // chunk_size if total_rows else 0
-chunk_reader = pd.read_csv(input_path, chunksize=chunk_size)
+chunk_reader = dataframe_chunker(raw_df, chunk_size)
 
 # Carico i modelli
 categorizer = joblib.load(wd / "cleaner" / "paragraph_classifier" / "logreg_sbert_slightly_unbalanced.pkl")
@@ -99,30 +103,39 @@ for i, df in enumerate(
     
 
     selected_paragraphs = pd.DataFrame()
-    if not mantain_paragraphs:
-        selected_paragraphs = (
-            paragraphs_df.groupby("des_id")["text"]
-            .apply(lambda parts: "\n\n".join(parts))
-            .reset_index(name="Description")
-        )
+
+    description_df = (
+        paragraphs_df.groupby("des_id")["text"]
+        .apply(lambda parts: "\n\n".join(parts))
+        .reset_index(name="Description")
+    )
+    description_df = description_df[
+        description_df["Description"].str.split().str.len() > min_word_count
+    ]
+    
+    if mantain_paragraphs:
+        selected_paragraphs = selected_paragraphs[
+            selected_paragraphs["des_id"] in description_df["des_id"]
+        ]
+        selected_paragraphs = paragraphs_df.rename(columns={"text":"Description"})["des_id", "par_id", "Description"]   # rimuovo info riguardo etichettatura
     else:
-        selected_paragraphs = paragraphs_df.rename(columns={"text":"Description"})
+        selected_paragraphs = description_df
+
     if clean_sentences:
         selected_paragraphs["Description"] = remove_entities(selected_paragraphs["Description"].to_list())
 
     selected_paragraphs["Description"] = selected_paragraphs["Description"].map(normalize_text)
 
-    if not mantain_paragraphs:
-        cleaned_df = df.iloc[selected_paragraphs["des_id"]].reset_index(drop=True)
+    if mantain_paragraphs:
+        selected_paragraphs.to_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv")
+    else:
+        cleaned_df = df.iloc[selected_paragraphs["des_id"].tolist()].reset_index(drop=True)
         cleaned_df["Description"] = selected_paragraphs["Description"]
         cleaned_df.to_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv")
-    else:
-        selected_paragraphs.to_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv")
         
     n_files = i + 1
 
 # Concateno tutti i file e salvo file finale
 df_all = pd.concat([pd.read_csv(wd / "cleaner" / "output" / f"cleaned_{i}.csv") for i in range(n_files)], ignore_index=True)
 
-#df_all.drop_duplicates(subset=["Title", "Description"], inplace=True)    # qualche job post può essere trovato con più criteri di ricerca
 df_all.to_csv(wd / "dataframes" / "cleaned.csv")
