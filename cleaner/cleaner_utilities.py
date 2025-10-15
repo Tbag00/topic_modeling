@@ -94,6 +94,29 @@ def description_headers(s: str) -> List:
     doc = nlp(s)
     return [span.text for span in doc.spans.get("sc", [])] # se non trova, get restituisce lista vuota
 
+def split_by_sentences(text, max_tokens=320, sentences_per_chunk=3):
+    doc = nlp_sent(text)
+    sents = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
+
+    sub_pars = []
+    buffer = []
+    buffer_len = 0
+
+    for sent in sents:
+        n_tokens = len(sent.split())
+        if buffer_len + n_tokens > max_tokens or len(buffer) >= sentences_per_chunk:
+            sub_pars.append(" ".join(buffer).strip())
+            buffer = [sent]
+            buffer_len = n_tokens
+        else:
+            buffer.append(sent)
+            buffer_len += n_tokens
+
+    if buffer:
+        sub_pars.append(" ".join(buffer).strip())
+
+    return sub_pars
+
 # Spezza prima con \n\n, se spezzo troppo raggruppo frasi per similarità
 def _split_long_paragraph(span, max_tokens=120, min_sents=2):
     text = span.text
@@ -109,11 +132,18 @@ def _split_long_paragraph(span, max_tokens=120, min_sents=2):
 
         if n_sents <= min_sents and i < len(parts)-1:
             buffer += "\n" + part
-        else:
-            paragraphs.append((buffer + "\n" + part).strip())
-            buffer = ""
+            continue
+        
+        full_part = (buffer + "\n" + part).strip()
+        buffer = ""
 
-    if buffer:
+        if len(full_part.split()) > 320:
+            sub_pars = split_by_sentences(full_part, max_tokens=max_tokens)
+            paragraphs.extend(sub_pars)
+        else:
+            paragraphs.append(full_part)
+
+    if buffer.strip():
         paragraphs.append(buffer.strip())
     
     return paragraphs

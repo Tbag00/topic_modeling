@@ -1,4 +1,5 @@
 from pathlib import Path
+import argparse
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -9,19 +10,34 @@ from umap import UMAP
 from embedders import NormalizedSentenceTransformer
 
 BASE_DIR = Path(__file__).resolve().parent
+parser = argparse.ArgumentParser(description="Effettua Bertopic sui paragrafi")
+parser.add_argument(
+    "--dimentionality-reduction",
+    default=True,
+    help="se true (default) effettua riduzione dimensionale con UMAP"
+)
+
 data_path = BASE_DIR.parent / "dataframes" / "cleaned.csv"
-df = pd.read_csv(data_path)
-docs = df["Description"].to_list()
-output_dir = BASE_DIR / "output"
+output_dir = BASE_DIR / "output_paragraphs"
 output_dir.mkdir(parents=True, exist_ok=True)
+
+df = pd.read_csv(data_path)
+
+assert all(c in df.columns for c in ["des_id", "par_id", "Description"]), \
+    "Il dataset deve contenere le colonne: des_id, par_id, Description"
+
+# Crea un ID univoco per ogni paragrafo
+df["par_uid"] = df.apply(lambda r: f"D{r.des_id}_P{r.par_id}", axis=1)
+docs = df["Description"].astype(str).tolist()
 
 embedding_model = NormalizedSentenceTransformer(
     model_name="sentence-transformers/all-mpnet-base-v2",
     device="cuda",
     encode_kwargs={"batch_size": 256},
 )
+
 embeddings = embedding_model.embed(docs, verbose=True)
-np.save(output_dir / "embeddings.npy", embeddings, allow_pickle=False)
+np.save(output_dir / "embeddings_paragraphs.npy", embeddings, allow_pickle=False)
 
 umap_model = UMAP(
     n_neighbors=15,  # basso per preservare contesto locale senza fondere cluster diversi visto che il gergo negli annunci e' molto simile
@@ -42,7 +58,7 @@ vectorizer_model = CountVectorizer(     # serve DOPO il topic modeling, per dare
    stop_words="english",
    ngram_range=(1, 3),
    min_df=0.1,  # richiede che un termine compaia almeno nel 10% dei documenti aggregati per topic
-   max_df=0.9   # ignora parole troppo comuni
+   max_df=0.8   # ignora parole troppo comuni
 )
 
 topic_model = BERTopic(
@@ -76,11 +92,12 @@ mean_topic_prob = mean_topic_prob.merge(
 
 mean_topic_prob.to_csv(output_dir / "mean_topic_probability.csv", index=False)
 
+# visualizzazioni
 fig_mean_prob = px.bar(
     mean_topic_prob,
     x="Name",
     y="Probability",
-    title="Mean Assigned Probability per Topic",
+    title="Mean Assigned Probability per Topic (paragraph level)",
 )
 fig_mean_prob.update_layout(xaxis_title="Topic", yaxis_title="Mean Probability")
 fig_mean_prob.write_html(

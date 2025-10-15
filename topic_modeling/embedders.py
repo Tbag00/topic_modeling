@@ -6,7 +6,7 @@ import numpy as np
 from bertopic.backend import BaseEmbedder
 from sentence_transformers import SentenceTransformer
 from sklearn.preprocessing import normalize
-
+import pandas as pd
 
 class NormalizedSentenceTransformer(BaseEmbedder):
     """SentenceTransformer wrapper that returns L2-normalized embeddings."""
@@ -14,6 +14,7 @@ class NormalizedSentenceTransformer(BaseEmbedder):
     def __init__(
         self,
         model_name: str,
+        mean: bool = False,
         device: Optional[str] = None,
         encode_kwargs: Optional[Dict[str, Any]] = None,
         normalize_embeddings: bool = True,
@@ -36,8 +37,12 @@ class NormalizedSentenceTransformer(BaseEmbedder):
             )
         return self._model
 
-    def embed(self, documents: List[str], verbose: bool = False) -> np.ndarray:
+    def embed(self, df: pd.DataFrame, verbose: bool = False) -> np.ndarray:
+        
         encode_opts = {"show_progress_bar": verbose, **self.encode_kwargs}
+        embeddings = []
+        if self.mean:
+            
         embeddings = self.model.encode(documents, **encode_opts)
         if self.normalize_embeddings:
             embeddings = normalize(embeddings)
